@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const FAQS = [
@@ -22,7 +23,32 @@ const FAQS = [
   },
 ];
 
-export function FaqSection() {
+interface FaqSectionProps {
+  discrete?: boolean;
+}
+
+export function FaqSection({ discrete = false }: FaqSectionProps) {
+  if (discrete) {
+    return (
+      <section className="rounded-xl border bg-card/70 px-4 py-3 shadow-sm">
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-foreground">
+            <span>FAQ</span>
+            <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-3 space-y-2">
+            {FAQS.map((faq) => (
+              <details key={faq.question} className="rounded-md border bg-background/70 px-3 py-2 text-sm">
+                <summary className="cursor-pointer font-medium text-foreground">{faq.question}</summary>
+                <p className="mt-2 text-muted-foreground">{faq.answer}</p>
+              </details>
+            ))}
+          </div>
+        </details>
+      </section>
+    );
+  }
+
   return (
     <Card className="py-4">
       <CardHeader className="px-4">

@@ -12,6 +12,8 @@ export interface ClubRow {
   shaftWeight: string;
   gripWeight: string;
   clubLength: string;
+  carryDistance: string;
+  totalDistance: string;
   targetSW: string;
   notes: string;
 }

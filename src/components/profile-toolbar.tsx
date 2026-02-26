@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { Download, MoreHorizontal, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,11 @@ interface ProfileToolbarProps {
   onDeleteProfile: () => void;
   onResetTemplate: () => void;
   onAddClub: () => void;
+  onExportSwingweightPdf: () => void;
+  onExportGappingPdf: () => void;
+  onExportSwingweightCsv: () => void;
+  onExportGappingCsv: () => void;
+  exportBusy?: boolean;
 }
 
 export function ProfileToolbar({
@@ -49,6 +54,11 @@ export function ProfileToolbar({
   onDeleteProfile,
   onResetTemplate,
   onAddClub,
+  onExportSwingweightPdf,
+  onExportGappingPdf,
+  onExportSwingweightCsv,
+  onExportGappingCsv,
+  exportBusy = false,
 }: ProfileToolbarProps) {
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -91,6 +101,34 @@ export function ProfileToolbar({
             <Plus className="size-4" />
             Add Club
           </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5" disabled={exportBusy}>
+                <Download className="size-4" />
+                {exportBusy ? "Generating…" : "Export"}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Export PDF</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={exportBusy} onSelect={onExportSwingweightPdf}>
+                Swingweight report (PDF)
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={exportBusy} onSelect={onExportGappingPdf}>
+                Yardage gapping report (PDF)
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Export CSV</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={exportBusy} onSelect={onExportSwingweightCsv}>
+                Swingweight sheet (CSV)
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={exportBusy} onSelect={onExportGappingCsv}>
+                Yardage gapping sheet (CSV)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

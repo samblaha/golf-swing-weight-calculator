@@ -14,6 +14,8 @@ function makeRow(partial: Partial<ClubRow>): ClubRow {
     shaftWeight: "",
     gripWeight: "",
     clubLength: "",
+    carryDistance: "",
+    totalDistance: "",
     targetSW: "",
     notes: "",
     ...partial,

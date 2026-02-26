@@ -1,4 +1,3 @@
-import { FaqSection } from "@/components/faq-section";
 import { HowItWorks } from "@/components/how-it-works";
 import { SwingweightChart } from "@/components/swingweight-chart";
 import { SwingweightFormula } from "@/components/swingweight-formula";
@@ -11,7 +10,6 @@ export function EducationalSection() {
         <SwingweightFormula />
       </div>
       <SwingweightChart />
-      <FaqSection />
     </section>
   );
 }

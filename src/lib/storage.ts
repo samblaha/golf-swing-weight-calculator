@@ -2,6 +2,32 @@ import type { AppState, BagProfile, ClubRow, CalculatorMode, UnitSystem } from "
 
 const STORAGE_KEY = "swingweight-bag-lab-react-v1";
 
+const CLUB_ORDER_ALIASES: ReadonlyArray<readonly [number, readonly string[]]> = [
+  [0, ["driver", "dr", "1w", "1wood", "1driver"]],
+  [10, ["3w", "3wood", "3fairwaywood"]],
+  [20, ["5w", "5wood", "5fairwaywood"]],
+  [30, ["7w", "7wood", "7fairwaywood"]],
+  [40, ["2h", "2hybrid", "2hy"]],
+  [41, ["3h", "3hybrid", "3hy"]],
+  [42, ["4h", "4hybrid", "4hy"]],
+  [43, ["5h", "5hybrid", "5hy"]],
+  [50, ["4i", "4iron"]],
+  [51, ["5i", "5iron"]],
+  [52, ["6i", "6iron"]],
+  [53, ["7i", "7iron"]],
+  [54, ["8i", "8iron"]],
+  [55, ["9i", "9iron"]],
+  [60, ["pw", "pitchingwedge", "pwedge"]],
+  [61, ["gw", "gapwedge", "aw", "approachwedge", "uw", "utilitywedge"]],
+  [62, ["sw", "sandwedge"]],
+  [63, ["lw", "lobwedge"]],
+  [70, ["putter", "pt"]],
+];
+
+const CLUB_ORDER_LOOKUP = new Map<string, number>(
+  CLUB_ORDER_ALIASES.flatMap(([rank, aliases]) => aliases.map((alias) => [alias, rank] as const)),
+);
+
 const DEFAULT_CLUBS = [
   { club: "Driver", targetSW: "" },
   { club: "3W", targetSW: "" },
@@ -18,6 +44,46 @@ const DEFAULT_CLUBS = [
   { club: "LW", targetSW: "" },
   { club: "Putter", targetSW: "" },
 ] as const;
+
+function normalizeClubName(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function rankForClubName(value: string): number | null {
+  const normalized = normalizeClubName(value);
+  return CLUB_ORDER_LOOKUP.get(normalized) ?? null;
+}
+
+export function sortClubRows(rows: ClubRow[]): ClubRow[] {
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftRank = rankForClubName(left.row.club);
+      const rightRank = rankForClubName(right.row.club);
+      const leftIsKnown = leftRank !== null;
+      const rightIsKnown = rightRank !== null;
+
+      if (leftIsKnown && rightIsKnown && leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+
+      if (leftIsKnown !== rightIsKnown) {
+        return leftIsKnown ? -1 : 1;
+      }
+
+      const alpha = left.row.club.trim().localeCompare(right.row.club.trim(), undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+
+      if (alpha !== 0) {
+        return alpha;
+      }
+
+      return left.index - right.index;
+    })
+    .map(({ row }) => row);
+}
 
 export function loadState(): AppState {
   if (typeof window === "undefined") {
@@ -87,6 +153,8 @@ export function createDefaultRows(): ClubRow[] {
     shaftWeight: "",
     gripWeight: "",
     clubLength: "",
+    carryDistance: "",
+    totalDistance: "",
     targetSW: club.targetSW,
     notes: "",
   }));
@@ -103,6 +171,8 @@ export function createBlankRow(): ClubRow {
     shaftWeight: "",
     gripWeight: "",
     clubLength: "",
+    carryDistance: "",
+    totalDistance: "",
     targetSW: "",
     notes: "",
   };
@@ -133,7 +203,7 @@ function normalizeProfile(profile: unknown): BagProfile | null {
     name: value.name ? String(value.name) : "Bag",
     calculatorMode,
     unitSystem,
-    rows: rows as ClubRow[],
+    rows: sortClubRows(rows as ClubRow[]),
     updatedAt: Number.isFinite(value.updatedAt) ? Number(value.updatedAt) : Date.now(),
   };
 }
@@ -175,6 +245,8 @@ function normalizeRow(row: unknown): ClubRow | null {
     shaftWeight: value.shaftWeight != null ? String(value.shaftWeight) : "",
     gripWeight: value.gripWeight != null ? String(value.gripWeight) : "",
     clubLength: value.clubLength != null ? String(value.clubLength) : "",
+    carryDistance: value.carryDistance != null ? String(value.carryDistance) : "",
+    totalDistance: value.totalDistance != null ? String(value.totalDistance) : "",
     targetSW: value.targetSW != null ? String(value.targetSW) : "",
     notes: value.notes != null ? String(value.notes) : "",
   };

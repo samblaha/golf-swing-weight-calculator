@@ -12,7 +12,7 @@ import {
   formatNullable,
   formatSignedNullable,
 } from "@/lib/swingweight";
-import type { BalanceUnit, CalculatorMode, ClubRow, UnitSystem } from "@/types";
+import type { CalculatorMode, ClubRow, UnitSystem } from "@/types";
 
 const TABLE_VIEW_STORAGE_KEY = "swingweight-bag-lab-table-view-v1";
 
@@ -38,10 +38,8 @@ interface SheetTableProps {
   rows: ClubRow[];
   calculatorMode: CalculatorMode;
   unitSystem: UnitSystem;
-  balanceUnit: BalanceUnit;
   onCalculatorModeChange: (mode: CalculatorMode) => void;
   onUnitSystemChange: (unitSystem: UnitSystem) => void;
-  onBalanceUnitChange: (unit: BalanceUnit) => void;
   onAddClub?: () => void;
   onResetTemplate?: () => void;
   onRowChange: (rowId: string, field: keyof ClubRow, value: string) => void;
@@ -52,15 +50,14 @@ export function SheetTable({
   rows,
   calculatorMode,
   unitSystem,
-  balanceUnit,
   onCalculatorModeChange,
   onUnitSystemChange,
-  onBalanceUnitChange,
   onAddClub,
   onResetTemplate,
   onRowChange,
   onRemoveRow,
 }: SheetTableProps) {
+  const balanceUnit = unitSystem === "metric" ? "cm" : "in";
   const [viewMode, setViewMode] = useState<TableViewMode>(() => {
     if (typeof window === "undefined") {
       return "simple";
@@ -152,31 +149,6 @@ export function SheetTable({
             </div>
           </div>
 
-          {calculatorMode === "basic" ? (
-            <div className="flex items-center gap-2">
-              <span className="font-medium uppercase tracking-wide">Balance unit</span>
-              <div className="inline-flex items-center rounded-md border bg-muted/40 p-0.5">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant={balanceUnit === "in" ? "secondary" : "ghost"}
-                  aria-pressed={balanceUnit === "in"}
-                  onClick={() => onBalanceUnitChange("in")}
-                >
-                  in
-                </Button>
-                <Button
-                  type="button"
-                  size="xs"
-                  variant={balanceUnit === "cm" ? "secondary" : "ghost"}
-                  aria-pressed={balanceUnit === "cm"}
-                  onClick={() => onBalanceUnitChange("cm")}
-                >
-                  cm
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </div>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground">

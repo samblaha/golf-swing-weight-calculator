@@ -3,19 +3,29 @@ import { HelpCircle, Info } from "lucide-react";
 
 import { HowToDialog } from "@/components/how-to-dialog";
 import { EducationalSection } from "@/components/educational-section";
+import { FaqSection } from "@/components/faq-section";
+import { GappingTable } from "@/components/gapping-table";
 import { ProfileToolbar } from "@/components/profile-toolbar";
 import { SheetTable } from "@/components/sheet-table";
 import { SummaryCards } from "@/components/summary-cards";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { createBlankRow, createDefaultRows, createProfile, loadState, saveState } from "@/lib/storage";
+import { computeGaps } from "@/lib/gapping";
+import { downloadPdf } from "@/lib/pdf/download-pdf";
+import { GappingReportDocument } from "@/lib/pdf/gapping-report";
+import { SwingweightReportDocument } from "@/lib/pdf/swingweight-report";
+import { createBlankRow, createDefaultRows, createProfile, loadState, saveState, sortClubRows } from "@/lib/storage";
 import { averageOrDash, computeMetrics } from "@/lib/swingweight";
 import type { AppState, BagProfile, BalanceUnit, CalculatorMode, ClubRow, UnitSystem } from "@/types";
 
 const HOW_TO_SEEN_STORAGE_KEY = "swingweight-bag-lab-howto-seen-v1";
+const ACTIVE_TAB_STORAGE_KEY = "swingweight-bag-lab-active-tab-v1";
+
+type ActiveTab = "swingweight" | "gapping";
 
 function App() {
   const [state, setState] = useState<AppState>(() => loadState());
+  const [exportBusy, setExportBusy] = useState(false);
   const [howToOpen, setHowToOpen] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -25,9 +35,26 @@ function App() {
     return !seen;
   });
 
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (typeof window === "undefined") {
+      return "swingweight";
+    }
+
+    const stored = window.localStorage.getItem(ACTIVE_TAB_STORAGE_KEY);
+    return stored === "gapping" ? "gapping" : "swingweight";
+  });
+
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVE_TAB_STORAGE_KEY, activeTab);
+    } catch {
+      // no-op
+    }
+  }, [activeTab]);
 
   const activeProfile = useMemo(
     () => state.profiles.find((profile) => profile.id === state.activeProfileId) ?? null,
@@ -61,7 +88,7 @@ function App() {
 
       const nextProfile: BagProfile = {
         ...profile,
-        rows: updater(profile.rows),
+        rows: sortClubRows(updater(profile.rows)),
         updatedAt: Date.now(),
       };
 
@@ -179,22 +206,6 @@ function App() {
     return formatNumberForInput(converted, 2);
   };
 
-  const handleBalanceUnitChange = (nextUnit: BalanceUnit) => {
-    setProfileRows((rows) =>
-      rows.map((row) => {
-        if (row.balanceUnit === nextUnit) {
-          return row;
-        }
-
-        return {
-          ...row,
-          balanceUnit: nextUnit,
-          balancePoint: convertBalancePoint(row.balancePoint, row.balanceUnit, nextUnit),
-        };
-      }),
-    );
-  };
-
   const handleRemoveRow = (rowId: string) => {
     setProfileRows((rows) => rows.filter((row) => row.id !== rowId));
   };
@@ -215,6 +226,16 @@ function App() {
     }
     const converted = from === "metric" ? parsed / 2.54 : parsed * 2.54;
     return formatNumberForInput(converted, 2);
+  };
+
+  const convertDistance = (raw: string, from: UnitSystem, to: UnitSystem) => {
+    const parsed = Number(raw.trim());
+    if (!Number.isFinite(parsed) || from === to) {
+      return raw;
+    }
+
+    const converted = from === "metric" ? parsed / 0.9144 : parsed * 0.9144;
+    return formatNumberForInput(converted, 0);
   };
 
   const handleCalculatorModeChange = (nextMode: CalculatorMode) => {
@@ -242,6 +263,8 @@ function App() {
           shaftWeight: convertWeight(row.shaftWeight, profile.unitSystem, nextSystem),
           gripWeight: convertWeight(row.gripWeight, profile.unitSystem, nextSystem),
           clubLength: convertLength(row.clubLength, profile.unitSystem, nextSystem),
+          carryDistance: convertDistance(row.carryDistance, profile.unitSystem, nextSystem),
+          totalDistance: convertDistance(row.totalDistance, profile.unitSystem, nextSystem),
           balancePoint: convertBalancePoint(row.balancePoint, row.balanceUnit, nextBalanceUnit),
           balanceUnit: nextBalanceUnit,
         })),
@@ -255,6 +278,165 @@ function App() {
       window.localStorage.setItem(HOW_TO_SEEN_STORAGE_KEY, "1");
     } catch {
       // no-op
+    }
+  };
+
+  const escapeCsvCell = (value: string | number | null) => {
+    const raw = value == null ? "" : String(value);
+    if (raw.includes(",") || raw.includes("\"") || raw.includes("\n")) {
+      return `"${raw.replaceAll("\"", "\"\"")}"`;
+    }
+    return raw;
+  };
+
+  const downloadCsv = (fileSuffix: string, headers: string[], lines: Array<Array<string | number | null>>) => {
+    if (!activeProfile) {
+      return;
+    }
+
+    const csvLines = lines.map((cells) => cells.map(escapeCsvCell).join(","));
+    const csv = [headers.join(","), ...csvLines].join("\n");
+    const fileSafeName = activeProfile.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${fileSafeName || "bag"}-${fileSuffix}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportSwingweightCsv = () => {
+    if (!activeProfile) {
+      return;
+    }
+
+    const headers = [
+      "club",
+      "mode",
+      "unit_system",
+      "weight_input",
+      "balance_point_input",
+      "head_weight_input",
+      "shaft_weight_input",
+      "grip_weight_input",
+      "club_length_input",
+      "target_sw",
+      "current_sw",
+      "swing_weight_grade",
+      "current_points",
+      "target_points",
+      "points_needed",
+      "head_adjustment_g",
+      "grip_adjustment_g",
+      "length_adjustment_in",
+      "inch_grams",
+      "lorythmic_scale_oz_in",
+      "official_scale_oz",
+      "notes",
+    ];
+
+    const lines = activeProfile.rows.map((row) => {
+      const metrics = computeMetrics(row, activeProfile.calculatorMode, activeProfile.unitSystem);
+      return [
+        row.club,
+        activeProfile.calculatorMode,
+        activeProfile.unitSystem,
+        row.clubWeight,
+        row.balancePoint,
+        row.headWeight,
+        row.shaftWeight,
+        row.gripWeight,
+        row.clubLength,
+        row.targetSW,
+        metrics.currentSWLabel,
+        metrics.swingWeightGrade,
+        metrics.currentPoints,
+        metrics.targetPoints,
+        metrics.deltaPoints,
+        metrics.headAdjustment,
+        metrics.gripAdjustment,
+        metrics.lengthAdjustment,
+        metrics.inchGrams,
+        metrics.lorythmicScale,
+        metrics.officialScale,
+        row.notes,
+      ];
+    });
+
+    downloadCsv("swingweight", headers, lines);
+  };
+
+  const handleExportGappingCsv = () => {
+    if (!activeProfile) {
+      return;
+    }
+
+    const gapping = computeGaps(activeProfile.rows, activeProfile.unitSystem);
+
+    const headers = [
+      "club",
+      "unit_system",
+      "carry_distance",
+      "total_distance",
+      "carry_gap",
+      "total_gap",
+      "carry_flag",
+      "total_flag",
+      "suggestion",
+    ];
+
+    const lines = activeProfile.rows.map((row) => {
+      const metrics = gapping.byId[row.id];
+      return [
+        row.club,
+        activeProfile.unitSystem,
+        row.carryDistance,
+        row.totalDistance,
+        metrics?.carryGap ?? null,
+        metrics?.totalGap ?? null,
+        metrics?.carryFlag ?? null,
+        metrics?.totalFlag ?? null,
+        metrics?.suggestion ?? null,
+      ];
+    });
+
+    downloadCsv("yardage-gapping", headers, lines);
+  };
+
+  const handleExportSwingweightPdf = async () => {
+    if (!activeProfile || exportBusy) {
+      return;
+    }
+
+    try {
+      setExportBusy(true);
+      const fileSafeName = activeProfile.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      await downloadPdf({
+        fileName: `${fileSafeName || "bag"}-swingweight-report.pdf`,
+        document: <SwingweightReportDocument profile={activeProfile} generatedAt={Date.now()} />,
+      });
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const handleExportGappingPdf = async () => {
+    if (!activeProfile || exportBusy) {
+      return;
+    }
+
+    try {
+      setExportBusy(true);
+      const fileSafeName = activeProfile.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      await downloadPdf({
+        fileName: `${fileSafeName || "bag"}-yardage-gapping-report.pdf`,
+        document: <GappingReportDocument profile={activeProfile} generatedAt={Date.now()} />,
+      });
+    } finally {
+      setExportBusy(false);
     }
   };
 
@@ -339,25 +521,64 @@ function App() {
           onDeleteProfile={handleDeleteProfile}
           onResetTemplate={handleResetTemplate}
           onAddClub={handleAddClub}
+          onExportSwingweightPdf={handleExportSwingweightPdf}
+          onExportGappingPdf={handleExportGappingPdf}
+          onExportSwingweightCsv={handleExportSwingweightCsv}
+          onExportGappingCsv={handleExportGappingCsv}
+          exportBusy={exportBusy}
         />
 
-        <SheetTable
-          rows={activeProfile.rows}
-          calculatorMode={activeProfile.calculatorMode}
-          unitSystem={activeProfile.unitSystem}
-          balanceUnit={activeProfile.rows[0]?.balanceUnit ?? "in"}
-          onCalculatorModeChange={handleCalculatorModeChange}
-          onUnitSystemChange={handleUnitSystemChange}
-          onBalanceUnitChange={handleBalanceUnitChange}
-          onAddClub={handleAddClub}
-          onResetTemplate={handleResetTemplate}
-          onRowChange={handleRowChange}
-          onRemoveRow={handleRemoveRow}
-        />
+        <section className="flex items-center justify-between rounded-xl border bg-card p-3 shadow-sm">
+          <div className="inline-flex items-center rounded-md border bg-muted/40 p-0.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={activeTab === "swingweight" ? "secondary" : "ghost"}
+              aria-pressed={activeTab === "swingweight"}
+              onClick={() => setActiveTab("swingweight")}
+            >
+              Swingweight
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={activeTab === "gapping" ? "secondary" : "ghost"}
+              aria-pressed={activeTab === "gapping"}
+              onClick={() => setActiveTab("gapping")}
+            >
+              Yardage Gapping
+            </Button>
+          </div>
+          <div className="text-xs text-muted-foreground">Saved per bag profile.</div>
+        </section>
+
+        {activeTab === "swingweight" ? (
+          <SheetTable
+            rows={activeProfile.rows}
+            calculatorMode={activeProfile.calculatorMode}
+            unitSystem={activeProfile.unitSystem}
+            onCalculatorModeChange={handleCalculatorModeChange}
+            onUnitSystemChange={handleUnitSystemChange}
+            onAddClub={handleAddClub}
+            onResetTemplate={handleResetTemplate}
+            onRowChange={handleRowChange}
+            onRemoveRow={handleRemoveRow}
+          />
+        ) : (
+          <GappingTable
+            rows={activeProfile.rows}
+            unitSystem={activeProfile.unitSystem}
+            onUnitSystemChange={handleUnitSystemChange}
+            onRowChange={handleRowChange}
+            onRemoveRow={handleRemoveRow}
+          />
+        )}
 
         <footer className="rounded-xl border bg-card px-4 py-3 text-xs text-muted-foreground">
           Positive head grams mean add head weight. Negative grip grams mean use a lighter grip.
         </footer>
+
+        <FaqSection discrete />
       </div>
     </main>
   );
